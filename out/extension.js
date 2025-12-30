@@ -129,13 +129,9 @@ class TapTestProvider {
 
         const tests = parseTapContent(document.getText());
 
+        // First, create all test items
+        const testItems = [];
         fileItem.children.replace([]);
-
-        const run = this.controller.createTestRun(
-            new vscode.TestRunRequest(),
-            'TAP Results',
-            false
-        );
 
         for (const test of tests) {
             const testId = `${uri.toString()}#${test.line}`;
@@ -151,19 +147,32 @@ class TapTestProvider {
 
             fileItem.children.add(testItem);
             this.testItems.set(testId, testItem);
+            testItems.push({ item: testItem, test });
+        }
+
+        // Create test run with all items
+        const run = this.controller.createTestRun(
+            new vscode.TestRunRequest(testItems.map(t => t.item)),
+            'TAP Results',
+            false
+        );
+
+        // Now report results
+        for (const { item, test } of testItems) {
+            run.started(item);
 
             if (test.hasSkip) {
-                run.skipped(testItem);
+                run.skipped(item);
             } else if (test.hasTodo) {
                 if (test.passed) {
-                    run.passed(testItem, test.duration);
+                    run.passed(item, test.duration);
                 } else {
-                    run.skipped(testItem);
+                    run.skipped(item);
                 }
             } else if (test.passed) {
-                run.passed(testItem, test.duration);
+                run.passed(item, test.duration);
             } else {
-                run.failed(testItem, new vscode.TestMessage(`Test failed: ${test.description}`), test.duration);
+                run.failed(item, new vscode.TestMessage(`Test failed: ${test.description}`), test.duration);
             }
         }
 
