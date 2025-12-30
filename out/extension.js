@@ -20,10 +20,8 @@ class TapFoldingProvider {
             const line = lines[i];
             const trimmedLine = line.trim();
 
-            // Check for test result line
             const testMatch = line.match(TEST_RESULT_REGEX);
             if (testMatch) {
-                // Close previous test's folding range if there were comment lines
                 if (currentTestLine >= 0 && i > currentTestLine + 1) {
                     foldingRanges.push(new vscode.FoldingRange(currentTestLine, i - 1));
                 }
@@ -32,7 +30,6 @@ class TapFoldingProvider {
                 continue;
             }
 
-            // Check for test plan (also ends previous test's fold)
             const planMatch = line.match(TEST_PLAN_REGEX);
             if (planMatch) {
                 if (currentTestLine >= 0 && i > currentTestLine + 1) {
@@ -42,7 +39,6 @@ class TapFoldingProvider {
                 continue;
             }
 
-            // Check for YAML block start
             if (trimmedLine === '---') {
                 for (let j = i + 1; j < lines.length; j++) {
                     if (lines[j].trim() === '...') {
@@ -53,7 +49,6 @@ class TapFoldingProvider {
             }
         }
 
-        // Close final test's folding range
         if (currentTestLine >= 0 && lines.length > currentTestLine + 1) {
             foldingRanges.push(new vscode.FoldingRange(currentTestLine, lines.length - 1));
         }
@@ -79,11 +74,9 @@ function parseTapContent(text) {
             const testNumber = parseInt(match[3], 10);
             const rest = match[4] || '';
 
-            // Check for directives
             const hasTodo = /# TODO/i.test(line);
             const hasSkip = /# SKIP/i.test(line);
 
-            // Extract description (remove directive comments)
             let description = rest.replace(/#.*$/, '').trim() || `Test ${testNumber}`;
 
             // Extract duration if present (e.g., "in 304ms", "in 1.5s")
@@ -115,33 +108,13 @@ function parseTapContent(text) {
 
 /**
  * TAP Test Provider
- * Shows test results in the Test Explorer
+ * Shows test results in the Test Explorer (read-only, no run capability)
  */
 class TapTestProvider {
     constructor() {
         this.controller = vscode.tests.createTestController('tapTests', 'TAP Tests');
         this.testItems = new Map();
-
-        this.controller.resolveHandler = async (item) => {
-            if (!item) {
-                await this.discoverAllTests();
-            }
-        };
-
-        this.controller.refreshHandler = async () => {
-            await this.discoverAllTests();
-        };
-    }
-
-    async discoverAllTests() {
-        this.controller.items.replace([]);
-        this.testItems.clear();
-
-        for (const document of vscode.workspace.textDocuments) {
-            if (document.languageId === 'tap') {
-                await this.updateTestsForDocument(document);
-            }
-        }
+        // No runHandler or run profiles - this is read-only
     }
 
     async updateTestsForDocument(document) {
@@ -159,13 +132,13 @@ class TapTestProvider {
         fileItem.children.replace([]);
 
         const run = this.controller.createTestRun(
-            new vscode.TestRunRequest([fileItem]),
+            new vscode.TestRunRequest(),
             'TAP Results',
             false
         );
 
         for (const test of tests) {
-            const testId = `${uri.toString()}#${test.testNumber}`;
+            const testId = `${uri.toString()}#${test.line}`;
             const testItem = this.controller.createTestItem(
                 testId,
                 `${test.testNumber}: ${test.description}`,

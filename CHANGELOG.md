@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 
 * Syntax-aware folding provider for subtests and nested test plans
-* Test Explorer integration showing test results with pass/fail/skip status
+* Test Explorer integration showing test results with pass/fail/skip status and duration
 * Improved documentation with integration examples for test runners
 
 ### Changed

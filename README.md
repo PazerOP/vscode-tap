@@ -9,7 +9,7 @@ This extension provides **editor support for `.tap` files**, including:
 - **Syntax highlighting** for TAP elements (version headers, test plans, ok/not ok results, comments, YAML blocks)
 - **Code folding** for test suites and subtests
 - **Comment toggling** using `Ctrl+/` (or `Cmd+/` on macOS)
-- **Test Explorer integration** showing test results with pass/fail status
+- **Test Explorer integration** showing test results with pass/fail/skip status and duration
 
 ## How to Use
 
@@ -60,7 +60,7 @@ ok 4 - Summarized correctly # TODO Not written yet
 
 - [x] Syntax highlighting
 - [x] Test suites folding
-- [x] Test Explorer integration with pass/fail status
+- [x] Test Explorer integration with pass/fail/skip status
 
 ## Requirements
 
