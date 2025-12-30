@@ -1,5 +1,16 @@
+# SYNTAX TEST "source.tap" "Nested TAP syntax"
+
 1..2
+# <- storage.modifier
+
 ok 1 - should be equal
+# <- storage.type
+
     1..1
+#   ^ storage.modifier
+
     ok 1 - should still be equal
+#   ^ storage.type
+
 ok 2 - the second thing is actually many things
+# <- storage.type

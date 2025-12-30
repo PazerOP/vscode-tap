@@ -1,0 +1,34 @@
+# SYNTAX TEST "source.tap" "Edge cases for TAP grammar"
+
+TAP version 13
+# <- markup.heading
+
+# Test plan at start
+# <- comment.line.number-sign.tap
+
+1..10
+# <- storage.modifier
+
+ok 1 - simple passing test
+# <- storage.type
+
+not ok 2 - simple failing test
+# <- storage.type
+
+ok 3 - test with comment # this is a comment
+# <- storage.type
+
+ok 4
+# <- storage.type
+
+not ok 5
+# <- storage.type
+
+ok 100 - large test number
+# <- storage.type
+
+not ok 999 - another large number
+# <- storage.type
+
+ok 8 - final test
+# <- storage.type
