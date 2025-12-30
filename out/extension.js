@@ -84,7 +84,17 @@ function parseTapContent(text) {
             const hasSkip = /# SKIP/i.test(line);
 
             // Extract description (remove directive comments)
-            const description = rest.replace(/#.*$/, '').trim() || `Test ${testNumber}`;
+            let description = rest.replace(/#.*$/, '').trim() || `Test ${testNumber}`;
+
+            // Extract duration if present (e.g., "in 304ms", "in 1.5s")
+            let duration = undefined;
+            const durationMatch = description.match(/\s+in\s+(\d+(?:\.\d+)?)(ms|s)\s*$/i);
+            if (durationMatch) {
+                const value = parseFloat(durationMatch[1]);
+                const unit = durationMatch[2].toLowerCase();
+                duration = unit === 's' ? value * 1000 : value;
+                description = description.replace(/\s+in\s+\d+(?:\.\d+)?(?:ms|s)\s*$/i, '').trim();
+            }
 
             tests.push({
                 line: i,
@@ -92,6 +102,7 @@ function parseTapContent(text) {
                 passed,
                 testNumber,
                 description,
+                duration,
                 hasTodo,
                 hasSkip,
                 fullLine: line
@@ -172,14 +183,14 @@ class TapTestProvider {
                 run.skipped(testItem);
             } else if (test.hasTodo) {
                 if (test.passed) {
-                    run.passed(testItem);
+                    run.passed(testItem, test.duration);
                 } else {
                     run.skipped(testItem);
                 }
             } else if (test.passed) {
-                run.passed(testItem);
+                run.passed(testItem, test.duration);
             } else {
-                run.failed(testItem, new vscode.TestMessage(`Test failed: ${test.description}`));
+                run.failed(testItem, new vscode.TestMessage(`Test failed: ${test.description}`), test.duration);
             }
         }
 
