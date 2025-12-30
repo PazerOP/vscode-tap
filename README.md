@@ -9,7 +9,7 @@ This extension provides **editor support for `.tap` files**, including:
 - **Syntax highlighting** for TAP elements (version headers, test plans, ok/not ok results, comments, YAML blocks)
 - **Code folding** for test suites and subtests
 - **Comment toggling** using `Ctrl+/` (or `Cmd+/` on macOS)
-- **Problem diagnostics** showing failed tests (`not ok`) in the Problems panel
+- **Test Explorer integration** showing test results with pass/fail status
 
 ## How to Use
 
@@ -60,8 +60,8 @@ ok 4 - Summarized correctly # TODO Not written yet
 
 - [x] Syntax highlighting
 - [x] Test suites folding
-- [x] Logging of test failures in Problems panel
+- [x] Test Explorer integration with pass/fail status
 
 ## Requirements
 
-- Visual Studio Code v1.23.0 or higher
+- Visual Studio Code v1.59.0 or higher

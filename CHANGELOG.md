@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 
 * Syntax-aware folding provider for subtests and nested test plans
-* Diagnostics provider showing failed tests (`not ok`) in Problems panel
-* TODO test warnings in Problems panel
+* Test Explorer integration showing test results with pass/fail/skip status
 * Improved documentation with integration examples for test runners
 
 ### Changed

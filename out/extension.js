@@ -8,31 +8,26 @@ class TapFoldingProvider {
     provideFoldingRanges(document, context, token) {
         const foldingRanges = [];
         const lines = document.getText().split('\n');
-        const stack = []; // Stack to track nested test suites
+        const stack = [];
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const trimmedLine = line.trim();
             const indentation = line.length - line.trimStart().length;
 
-            // Match test plan (e.g., "1..4")
             const planMatch = trimmedLine.match(/^(\d+)\.\.(\d+)$/);
             if (planMatch) {
-                // Close any previous ranges at same or deeper indentation
                 while (stack.length > 0 && stack[stack.length - 1].indent >= indentation) {
                     const prev = stack.pop();
                     if (prev.startLine < i - 1) {
                         foldingRanges.push(new vscode.FoldingRange(prev.startLine, i - 1));
                     }
                 }
-                // Start a new folding range for this test plan
                 stack.push({ startLine: i, indent: indentation });
                 continue;
             }
 
-            // Match YAML block start (---)
             if (trimmedLine === '---') {
-                // Find the end of the YAML block (...)
                 for (let j = i + 1; j < lines.length; j++) {
                     if (lines[j].trim() === '...') {
                         foldingRanges.push(new vscode.FoldingRange(i, j, vscode.FoldingRangeKind.Region));
@@ -42,7 +37,6 @@ class TapFoldingProvider {
             }
         }
 
-        // Close any remaining open ranges
         while (stack.length > 0) {
             const prev = stack.pop();
             if (prev.startLine < lines.length - 1) {
@@ -55,80 +49,146 @@ class TapFoldingProvider {
 }
 
 /**
- * TAP Diagnostics Provider
- * Provides problem diagnostics for failed tests (not ok)
+ * Parse TAP content and extract test results
  */
-class TapDiagnosticsProvider {
-    constructor() {
-        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('tap');
+function parseTapContent(text) {
+    const lines = text.split('\n');
+    const tests = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Match test results: "ok N - description" or "not ok N - description"
+        const match = line.match(/^(\s*)(ok|not ok)\s+(\d+)(?:\s+-\s+(.*))?/);
+        if (match) {
+            const indent = match[1].length;
+            const passed = match[2] === 'ok';
+            const testNumber = parseInt(match[3], 10);
+            const rest = match[4] || '';
+
+            // Check for directives
+            const hasTodo = /# TODO/i.test(line);
+            const hasSkip = /# SKIP/i.test(line);
+
+            // Extract description (remove directive comments)
+            const description = rest.replace(/#.*$/, '').trim() || `Test ${testNumber}`;
+
+            tests.push({
+                line: i,
+                indent,
+                passed,
+                testNumber,
+                description,
+                hasTodo,
+                hasSkip,
+                fullLine: line
+            });
+        }
     }
 
-    updateDiagnostics(document) {
-        if (document.languageId !== 'tap') {
-            return;
+    return tests;
+}
+
+/**
+ * TAP Test Provider
+ * Shows test results in the Test Explorer
+ */
+class TapTestProvider {
+    constructor() {
+        this.controller = vscode.tests.createTestController('tapTests', 'TAP Tests');
+        this.testItems = new Map();
+
+        this.controller.resolveHandler = async (item) => {
+            if (!item) {
+                // Resolve root - find all TAP files
+                await this.discoverAllTests();
+            }
+        };
+
+        this.controller.refreshHandler = async () => {
+            await this.discoverAllTests();
+        };
+    }
+
+    async discoverAllTests() {
+        // Clear existing items
+        this.controller.items.replace([]);
+        this.testItems.clear();
+
+        // Find all open TAP documents
+        for (const document of vscode.workspace.textDocuments) {
+            if (document.languageId === 'tap') {
+                await this.updateTestsForDocument(document);
+            }
+        }
+    }
+
+    async updateTestsForDocument(document) {
+        const uri = document.uri;
+        const fileName = uri.path.split('/').pop();
+
+        // Create or get file-level test item
+        let fileItem = this.controller.items.get(uri.toString());
+        if (!fileItem) {
+            fileItem = this.controller.createTestItem(uri.toString(), fileName, uri);
+            this.controller.items.add(fileItem);
         }
 
-        const diagnostics = [];
-        const lines = document.getText().split('\n');
+        // Parse tests from document
+        const tests = parseTapContent(document.getText());
 
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+        // Clear existing children
+        fileItem.children.replace([]);
 
-            // Match "not ok" test results
-            const notOkMatch = line.match(/^(\s*)(not ok)\s+(\d+)(?:\s+-\s+(.*))?/);
-            if (notOkMatch) {
-                const indent = notOkMatch[1].length;
-                const testNumber = notOkMatch[3];
-                const description = notOkMatch[4] || `Test ${testNumber}`;
+        // Create test run to show results
+        const run = this.controller.createTestRun(
+            new vscode.TestRunRequest([fileItem]),
+            'TAP Results',
+            false
+        );
 
-                // Check for TODO or SKIP directives (these are not failures)
-                const hasTodo = /# TODO/i.test(line);
-                const hasSkip = /# SKIP/i.test(line);
+        // Add test items and set their state
+        for (const test of tests) {
+            const testId = `${uri.toString()}#${test.testNumber}`;
+            const testItem = this.controller.createTestItem(
+                testId,
+                `${test.testNumber}: ${test.description}`,
+                uri
+            );
+            testItem.range = new vscode.Range(
+                new vscode.Position(test.line, test.indent),
+                new vscode.Position(test.line, test.fullLine.length)
+            );
 
-                if (!hasTodo && !hasSkip) {
-                    const range = new vscode.Range(
-                        new vscode.Position(i, indent),
-                        new vscode.Position(i, line.length)
-                    );
+            fileItem.children.add(testItem);
+            this.testItems.set(testId, testItem);
 
-                    const diagnostic = new vscode.Diagnostic(
-                        range,
-                        `Test failed: ${description.replace(/#.*$/, '').trim()}`,
-                        vscode.DiagnosticSeverity.Error
-                    );
-                    diagnostic.source = 'TAP';
-                    diagnostic.code = `not-ok-${testNumber}`;
-
-                    diagnostics.push(diagnostic);
-                } else if (hasTodo) {
-                    // TODO tests are warnings, not errors
-                    const range = new vscode.Range(
-                        new vscode.Position(i, indent),
-                        new vscode.Position(i, line.length)
-                    );
-
-                    const diagnostic = new vscode.Diagnostic(
-                        range,
-                        `TODO: ${description.replace(/#.*$/, '').trim()}`,
-                        vscode.DiagnosticSeverity.Warning
-                    );
-                    diagnostic.source = 'TAP';
-                    diagnostic.code = `todo-${testNumber}`;
-
-                    diagnostics.push(diagnostic);
+            // Set test state
+            if (test.hasSkip) {
+                run.skipped(testItem);
+            } else if (test.hasTodo) {
+                // TODO tests that fail are expected, treat as skipped
+                if (test.passed) {
+                    run.passed(testItem);
+                } else {
+                    run.skipped(testItem);
                 }
+            } else if (test.passed) {
+                run.passed(testItem);
+            } else {
+                run.failed(testItem, new vscode.TestMessage(`Test failed: ${test.description}`));
             }
         }
 
-        this.diagnosticCollection.set(document.uri, diagnostics);
+        run.end();
     }
 
-    clearDiagnostics(document) {
-        this.diagnosticCollection.delete(document.uri);
+    removeTestsForDocument(uri) {
+        this.controller.items.delete(uri.toString());
     }
 
     dispose() {
-        this.diagnosticCollection.dispose();
+        this.controller.dispose();
     }
 }
 
@@ -146,43 +206,43 @@ function activate(context) {
         )
     );
 
-    // Register diagnostics provider
-    const diagnosticsProvider = new TapDiagnosticsProvider();
-    context.subscriptions.push(diagnosticsProvider);
+    // Register test provider
+    const testProvider = new TapTestProvider();
+    context.subscriptions.push(testProvider);
 
-    // Update diagnostics when document opens
+    // Update tests when document opens
     context.subscriptions.push(
         vscode.workspace.onDidOpenTextDocument((document) => {
             if (document.languageId === 'tap') {
-                diagnosticsProvider.updateDiagnostics(document);
+                testProvider.updateTestsForDocument(document);
             }
         })
     );
 
-    // Update diagnostics when document changes
+    // Update tests when document changes
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (event.document.languageId === 'tap') {
-                diagnosticsProvider.updateDiagnostics(event.document);
+                testProvider.updateTestsForDocument(event.document);
             }
         })
     );
 
-    // Clear diagnostics when document closes
+    // Remove tests when document closes
     context.subscriptions.push(
         vscode.workspace.onDidCloseTextDocument((document) => {
             if (document.languageId === 'tap') {
-                diagnosticsProvider.clearDiagnostics(document);
+                testProvider.removeTestsForDocument(document.uri);
             }
         })
     );
 
-    // Update diagnostics for already open documents
-    vscode.workspace.textDocuments.forEach((document) => {
+    // Update tests for already open documents
+    for (const document of vscode.workspace.textDocuments) {
         if (document.languageId === 'tap') {
-            diagnosticsProvider.updateDiagnostics(document);
+            testProvider.updateTestsForDocument(document);
         }
-    });
+    }
 }
 
 /**
