@@ -1,0 +1,19 @@
+# SYNTAX TEST "source.tap" "BATS-style TAP output without dash separator"
+
+1..5
+# <- storage.modifier
+
+ok 1 formatter converts space indentation to tabs in 515ms
+# <- storage.type
+
+not ok 2 -Werror treats warnings as errors in 413ms
+# <- storage.type
+
+ok 3 abc 123 -w writes to file in 304ms
+# <- storage.type
+
+not ok 4 some test description
+# <- storage.type
+
+ok 5
+# <- storage.type

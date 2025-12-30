@@ -1,7 +1,7 @@
 {
     "name": "vscode-tap",
     "displayName": "Tap",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "publisher": "numaru",
     "description": "Test Anything Protocol support",
     "author": {
@@ -20,7 +20,7 @@
         "onLanguage:tap"
     ],
     "engines": {
-        "vscode": "^1.17.0"
+        "vscode": "^1.59.0"
     },
     "main": "./out/extension",
     "scripts": {
@@ -28,6 +28,7 @@
         "package": "vsce package"
     },
     "devDependencies": {
+        "@types/vscode": "^1.59.0",
         "@vscode/vsce": "^3.2.1",
         "vscode-tmgrammar-test": "^0.1.3"
     },
