@@ -64,4 +64,4 @@ ok 4 - Summarized correctly # TODO Not written yet
 
 ## Requirements
 
-- Visual Studio Code v1.17.0 or higher
+- Visual Studio Code v1.23.0 or higher

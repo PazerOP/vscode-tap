@@ -20,7 +20,7 @@
         "onLanguage:tap"
     ],
     "engines": {
-        "vscode": "^1.17.0"
+        "vscode": "^1.23.0"
     },
     "main": "./out/extension",
     "scripts": {
@@ -28,7 +28,7 @@
         "package": "vsce package"
     },
     "devDependencies": {
-        "@types/vscode": "^1.17.0",
+        "@types/vscode": "^1.23.0",
         "@vscode/vsce": "^3.2.1",
         "vscode-tmgrammar-test": "^0.1.3"
     },
