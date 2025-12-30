@@ -18,9 +18,10 @@
         "match": "^\\s*\\d+\\.\\.\\d+$",
         "name": "storage.modifier"
     }, {
-        "match": "^\\s*((ok|not ok) \\d+)( - ([^#\\n]*))?",
+        "match": "^\\s*(ok|not ok)\\s+(\\d+)(?:\\s+(-)?\\s*([^#\\n]*))?",
         "captures": {
             "1": {"name": "storage.type"},
+            "2": {"name": "constant.numeric"},
             "4": {"name": "string.unquoted"}
         }
     }],

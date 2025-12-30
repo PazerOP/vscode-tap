@@ -1,32 +1,48 @@
 const vscode = require('vscode');
 
+// Regex to match test results - handles both "ok 1 - desc" and "ok 1 desc" formats
+const TEST_RESULT_REGEX = /^(\s*)(ok|not ok)\s+(\d+)(?:\s+(?:-\s+)?(.*))?/;
+const TEST_PLAN_REGEX = /^(\s*)(\d+)\.\.(\d+)$/;
+
 /**
  * TAP Folding Provider
- * Provides syntax-aware folding for TAP files based on test plans and subtests
+ * Provides folding for test results (to hide comments below) and YAML blocks
  */
 class TapFoldingProvider {
     provideFoldingRanges(document, context, token) {
         const foldingRanges = [];
         const lines = document.getText().split('\n');
-        const stack = [];
+
+        let currentTestLine = -1;
+        let currentTestIndent = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const trimmedLine = line.trim();
-            const indentation = line.length - line.trimStart().length;
 
-            const planMatch = trimmedLine.match(/^(\d+)\.\.(\d+)$/);
-            if (planMatch) {
-                while (stack.length > 0 && stack[stack.length - 1].indent >= indentation) {
-                    const prev = stack.pop();
-                    if (prev.startLine < i - 1) {
-                        foldingRanges.push(new vscode.FoldingRange(prev.startLine, i - 1));
-                    }
+            // Check for test result line
+            const testMatch = line.match(TEST_RESULT_REGEX);
+            if (testMatch) {
+                // Close previous test's folding range if there were comment lines
+                if (currentTestLine >= 0 && i > currentTestLine + 1) {
+                    foldingRanges.push(new vscode.FoldingRange(currentTestLine, i - 1));
                 }
-                stack.push({ startLine: i, indent: indentation });
+                currentTestLine = i;
+                currentTestIndent = testMatch[1].length;
                 continue;
             }
 
+            // Check for test plan (also ends previous test's fold)
+            const planMatch = line.match(TEST_PLAN_REGEX);
+            if (planMatch) {
+                if (currentTestLine >= 0 && i > currentTestLine + 1) {
+                    foldingRanges.push(new vscode.FoldingRange(currentTestLine, i - 1));
+                }
+                currentTestLine = -1;
+                continue;
+            }
+
+            // Check for YAML block start
             if (trimmedLine === '---') {
                 for (let j = i + 1; j < lines.length; j++) {
                     if (lines[j].trim() === '...') {
@@ -37,11 +53,9 @@ class TapFoldingProvider {
             }
         }
 
-        while (stack.length > 0) {
-            const prev = stack.pop();
-            if (prev.startLine < lines.length - 1) {
-                foldingRanges.push(new vscode.FoldingRange(prev.startLine, lines.length - 1));
-            }
+        // Close final test's folding range
+        if (currentTestLine >= 0 && lines.length > currentTestLine + 1) {
+            foldingRanges.push(new vscode.FoldingRange(currentTestLine, lines.length - 1));
         }
 
         return foldingRanges;
@@ -58,8 +72,7 @@ function parseTapContent(text) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
-        // Match test results: "ok N - description" or "not ok N - description"
-        const match = line.match(/^(\s*)(ok|not ok)\s+(\d+)(?:\s+-\s+(.*))?/);
+        const match = line.match(TEST_RESULT_REGEX);
         if (match) {
             const indent = match[1].length;
             const passed = match[2] === 'ok';
@@ -100,7 +113,6 @@ class TapTestProvider {
 
         this.controller.resolveHandler = async (item) => {
             if (!item) {
-                // Resolve root - find all TAP files
                 await this.discoverAllTests();
             }
         };
@@ -111,11 +123,9 @@ class TapTestProvider {
     }
 
     async discoverAllTests() {
-        // Clear existing items
         this.controller.items.replace([]);
         this.testItems.clear();
 
-        // Find all open TAP documents
         for (const document of vscode.workspace.textDocuments) {
             if (document.languageId === 'tap') {
                 await this.updateTestsForDocument(document);
@@ -127,27 +137,22 @@ class TapTestProvider {
         const uri = document.uri;
         const fileName = uri.path.split('/').pop();
 
-        // Create or get file-level test item
         let fileItem = this.controller.items.get(uri.toString());
         if (!fileItem) {
             fileItem = this.controller.createTestItem(uri.toString(), fileName, uri);
             this.controller.items.add(fileItem);
         }
 
-        // Parse tests from document
         const tests = parseTapContent(document.getText());
 
-        // Clear existing children
         fileItem.children.replace([]);
 
-        // Create test run to show results
         const run = this.controller.createTestRun(
             new vscode.TestRunRequest([fileItem]),
             'TAP Results',
             false
         );
 
-        // Add test items and set their state
         for (const test of tests) {
             const testId = `${uri.toString()}#${test.testNumber}`;
             const testItem = this.controller.createTestItem(
@@ -163,11 +168,9 @@ class TapTestProvider {
             fileItem.children.add(testItem);
             this.testItems.set(testId, testItem);
 
-            // Set test state
             if (test.hasSkip) {
                 run.skipped(testItem);
             } else if (test.hasTodo) {
-                // TODO tests that fail are expected, treat as skipped
                 if (test.passed) {
                     run.passed(testItem);
                 } else {
@@ -197,7 +200,6 @@ class TapTestProvider {
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-    // Register folding provider
     const foldingProvider = new TapFoldingProvider();
     context.subscriptions.push(
         vscode.languages.registerFoldingRangeProvider(
@@ -206,11 +208,9 @@ function activate(context) {
         )
     );
 
-    // Register test provider
     const testProvider = new TapTestProvider();
     context.subscriptions.push(testProvider);
 
-    // Update tests when document opens
     context.subscriptions.push(
         vscode.workspace.onDidOpenTextDocument((document) => {
             if (document.languageId === 'tap') {
@@ -219,7 +219,6 @@ function activate(context) {
         })
     );
 
-    // Update tests when document changes
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument((event) => {
             if (event.document.languageId === 'tap') {
@@ -228,7 +227,6 @@ function activate(context) {
         })
     );
 
-    // Remove tests when document closes
     context.subscriptions.push(
         vscode.workspace.onDidCloseTextDocument((document) => {
             if (document.languageId === 'tap') {
@@ -237,7 +235,6 @@ function activate(context) {
         })
     );
 
-    // Update tests for already open documents
     for (const document of vscode.workspace.textDocuments) {
         if (document.languageId === 'tap') {
             testProvider.updateTestsForDocument(document);
@@ -245,9 +242,6 @@ function activate(context) {
     }
 }
 
-/**
- * Deactivates the extension
- */
 function deactivate() {}
 
 module.exports = {
