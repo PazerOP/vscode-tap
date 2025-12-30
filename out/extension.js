@@ -1,12 +1,11 @@
 const vscode = require('vscode');
 
-// Regex to match test results - handles both "ok 1 - desc" and "ok 1 desc" formats
+// Regex patterns
 const TEST_RESULT_REGEX = /^(\s*)(ok|not ok)\s+(\d+)(?:\s+(?:-\s+)?(.*))?/;
 const TEST_PLAN_REGEX = /^(\s*)(\d+)\.\.(\d+)$/;
 
 /**
  * TAP Folding Provider
- * Provides folding for test results (to hide comments below) and YAML blocks
  */
 class TapFoldingProvider {
     provideFoldingRanges(document, context, token) {
@@ -14,7 +13,6 @@ class TapFoldingProvider {
         const lines = document.getText().split('\n');
 
         let currentTestLine = -1;
-        let currentTestIndent = 0;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -26,7 +24,6 @@ class TapFoldingProvider {
                     foldingRanges.push(new vscode.FoldingRange(currentTestLine, i - 1));
                 }
                 currentTestLine = i;
-                currentTestIndent = testMatch[1].length;
                 continue;
             }
 
@@ -58,28 +55,68 @@ class TapFoldingProvider {
 }
 
 /**
- * Parse TAP content and extract test results
+ * Parse TAP content into groups and tests with output
  */
 function parseTapContent(text) {
     const lines = text.split('\n');
-    const tests = [];
+    const groups = [];
+    let currentGroup = null;
+    let currentTest = null;
+    let lastTestNumber = 0;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
 
-        const match = line.match(TEST_RESULT_REGEX);
-        if (match) {
-            const indent = match[1].length;
-            const passed = match[2] === 'ok';
-            const testNumber = parseInt(match[3], 10);
-            const rest = match[4] || '';
+        // Check for test plan (starts a new group)
+        const planMatch = line.match(TEST_PLAN_REGEX);
+        if (planMatch) {
+            // Save current test's output before starting new group
+            if (currentGroup) {
+                groups.push(currentGroup);
+            }
+            currentGroup = {
+                name: `Tests ${planMatch[2]}..${planMatch[3]}`,
+                line: i,
+                tests: []
+            };
+            currentTest = null;
+            lastTestNumber = 0;
+            continue;
+        }
+
+        // Check for test result
+        const testMatch = line.match(TEST_RESULT_REGEX);
+        if (testMatch) {
+            const indent = testMatch[1].length;
+            const passed = testMatch[2] === 'ok';
+            const testNumber = parseInt(testMatch[3], 10);
+            const rest = testMatch[4] || '';
+
+            // Detect new group if test number resets
+            if (testNumber <= lastTestNumber && currentGroup && currentGroup.tests.length > 0) {
+                groups.push(currentGroup);
+                currentGroup = {
+                    name: `Tests (group ${groups.length + 1})`,
+                    line: i,
+                    tests: []
+                };
+            }
+
+            // Create group if none exists
+            if (!currentGroup) {
+                currentGroup = {
+                    name: 'Tests',
+                    line: i,
+                    tests: []
+                };
+            }
 
             const hasTodo = /# TODO/i.test(line);
             const hasSkip = /# SKIP/i.test(line);
 
             let description = rest.replace(/#.*$/, '').trim() || `Test ${testNumber}`;
 
-            // Extract duration if present (e.g., "in 304ms", "in 1.5s")
+            // Extract duration
             let duration = undefined;
             const durationMatch = description.match(/\s+in\s+(\d+(?:\.\d+)?)(ms|s)\s*$/i);
             if (durationMatch) {
@@ -89,7 +126,7 @@ function parseTapContent(text) {
                 description = description.replace(/\s+in\s+\d+(?:\.\d+)?(?:ms|s)\s*$/i, '').trim();
             }
 
-            tests.push({
+            currentTest = {
                 line: i,
                 indent,
                 passed,
@@ -98,23 +135,36 @@ function parseTapContent(text) {
                 duration,
                 hasTodo,
                 hasSkip,
-                fullLine: line
-            });
+                fullLine: line,
+                output: []
+            };
+
+            currentGroup.tests.push(currentTest);
+            lastTestNumber = testNumber;
+            continue;
+        }
+
+        // Any other line is output for the current test
+        if (currentTest && line.trim()) {
+            currentTest.output.push(line);
         }
     }
 
-    return tests;
+    // Don't forget the last group
+    if (currentGroup) {
+        groups.push(currentGroup);
+    }
+
+    return groups;
 }
 
 /**
  * TAP Test Provider
- * Shows test results in the Test Explorer (read-only, no run capability)
  */
 class TapTestProvider {
     constructor() {
         this.controller = vscode.tests.createTestController('tapTests', 'TAP Tests');
         this.testItems = new Map();
-        // No runHandler or run profiles - this is read-only
     }
 
     async updateTestsForDocument(document) {
@@ -127,39 +177,60 @@ class TapTestProvider {
             this.controller.items.add(fileItem);
         }
 
-        const tests = parseTapContent(document.getText());
+        const groups = parseTapContent(document.getText());
 
-        // First, create all test items
-        const testItems = [];
         fileItem.children.replace([]);
+        const allTestItems = [];
 
-        for (const test of tests) {
-            const testId = `${uri.toString()}#${test.line}`;
-            const testItem = this.controller.createTestItem(
-                testId,
-                `${test.testNumber}: ${test.description}`,
-                uri
-            );
-            testItem.range = new vscode.Range(
-                new vscode.Position(test.line, test.indent),
-                new vscode.Position(test.line, test.fullLine.length)
-            );
+        for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+            const group = groups[groupIndex];
 
-            fileItem.children.add(testItem);
-            this.testItems.set(testId, testItem);
-            testItems.push({ item: testItem, test });
+            // Create group item if multiple groups, otherwise add tests directly to file
+            let parentItem;
+            if (groups.length > 1) {
+                const groupId = `${uri.toString()}#group${groupIndex}`;
+                parentItem = this.controller.createTestItem(groupId, group.name, uri);
+                parentItem.range = new vscode.Range(
+                    new vscode.Position(group.line, 0),
+                    new vscode.Position(group.line, 0)
+                );
+                fileItem.children.add(parentItem);
+            } else {
+                parentItem = fileItem;
+            }
+
+            for (const test of group.tests) {
+                const testId = `${uri.toString()}#${groupIndex}:${test.line}`;
+                const testItem = this.controller.createTestItem(
+                    testId,
+                    `${test.testNumber}: ${test.description}`,
+                    uri
+                );
+                testItem.range = new vscode.Range(
+                    new vscode.Position(test.line, test.indent),
+                    new vscode.Position(test.line, test.fullLine.length)
+                );
+
+                parentItem.children.add(testItem);
+                this.testItems.set(testId, testItem);
+                allTestItems.push({ item: testItem, test });
+            }
         }
 
-        // Create test run with all items
+        // Create test run
         const run = this.controller.createTestRun(
-            new vscode.TestRunRequest(testItems.map(t => t.item)),
+            new vscode.TestRunRequest(allTestItems.map(t => t.item)),
             'TAP Results',
             false
         );
 
-        // Now report results
-        for (const { item, test } of testItems) {
+        for (const { item, test } of allTestItems) {
             run.started(item);
+
+            // Append output if any
+            if (test.output.length > 0) {
+                run.appendOutput(test.output.join('\r\n') + '\r\n', undefined, item);
+            }
 
             if (test.hasSkip) {
                 run.skipped(item);
@@ -172,7 +243,14 @@ class TapTestProvider {
             } else if (test.passed) {
                 run.passed(item, test.duration);
             } else {
-                run.failed(item, new vscode.TestMessage(`Test failed: ${test.description}`), test.duration);
+                const message = new vscode.TestMessage(test.output.length > 0
+                    ? test.output.join('\n')
+                    : `Test failed: ${test.description}`);
+                message.location = new vscode.Location(
+                    item.uri,
+                    new vscode.Position(test.line, test.indent)
+                );
+                run.failed(item, message, test.duration);
             }
         }
 
@@ -190,7 +268,6 @@ class TapTestProvider {
 
 /**
  * Activates the extension
- * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
     const foldingProvider = new TapFoldingProvider();
