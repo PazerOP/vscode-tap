@@ -165,11 +165,22 @@ class TapTestProvider {
     constructor() {
         this.controller = vscode.tests.createTestController('tapTests', 'TAP Tests');
         this.testItems = new Map();
+        this.documents = new Map();
+
+        // Add refresh handler so users can reload tests
+        this.controller.refreshHandler = async () => {
+            for (const document of this.documents.values()) {
+                await this.updateTestsForDocument(document);
+            }
+        };
     }
 
     async updateTestsForDocument(document) {
         const uri = document.uri;
         const fileName = uri.path.split('/').pop();
+
+        // Track document for refresh
+        this.documents.set(uri.toString(), document);
 
         let fileItem = this.controller.items.get(uri.toString());
         if (!fileItem) {
@@ -259,6 +270,7 @@ class TapTestProvider {
 
     removeTestsForDocument(uri) {
         this.controller.items.delete(uri.toString());
+        this.documents.delete(uri.toString());
     }
 
     dispose() {
