@@ -23,6 +23,12 @@
         "vscode": "^1.17.0"
     },
     "main": "./out/extension",
+    "scripts": {
+        "test": "vscode-tmgrammar-test -g syntaxes/tap.tmLanguage.json 'test/**/*.tap'"
+    },
+    "devDependencies": {
+        "vscode-tmgrammar-test": "^0.1.3"
+    },
     "contributes": {
         "languages": [{
             "id": "tap",

@@ -1,17 +1,19 @@
+# SYNTAX TEST "source.tap" "Basic TAP syntax"
+
 TAP version 13
+# <- markup.heading
+
 1..4
+# <- storage.modifier
+
 ok 1 - Input file opened
+# <- storage.type
+
 not ok 2 - First line of the input valid
-  ---
-  message: 'First line invalid'
-  severity: fail
-  data:
-    got: 'Flirble'
-    expect: 'Fnible'
-  ...
+# <- storage.type
+
 ok 3 - Read the rest of the file
+# <- storage.type
+
 not ok 4 - Summarized correctly # TODO Not written yet
-  ---
-  message: "Can't make summary yet"
-  severity: todo
-  ...
+# <- storage.type
